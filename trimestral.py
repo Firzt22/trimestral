@@ -12,8 +12,7 @@ st.set_page_config(
 )
 
 st.title("📊 Informe Trimestral de Gestión Judicial")
-st.markdown("Análisis comparativo de **Mediaciones**, **Juicios** y **Sentencias** (Agosto 2022 en adelante).")
-st.caption("Nota: Los promedios y métricas generales **excluyen automáticamente** la feria judicial de los meses de **Enero**.")
+st.markdown("Análisis comparativo de **Mediaciones**, **Juicios** y **Sentencias**.")
 
 # ---------------------------------------------------------
 # FUNCIONES DE PROCESAMIENTO DE DATOS
@@ -91,7 +90,6 @@ uploaded_file = st.sidebar.file_uploader("Seleccioná el archivo Excel (`.xlsx`)
 if uploaded_file is not None:
     data = load_data(uploaded_file)
 else:
-    # Intento de lectura por defecto local si no se sube un archivo
     try:
         data = load_data('TRIMESTRAL PRUEBA.xlsx')
         st.sidebar.success("Usando archivo local de prueba.")
@@ -116,11 +114,11 @@ with tab_med:
     avg_m1 = int(df_no_jan[m1].mean())
     avg_m2 = int(df_no_jan[m2].mean())
     
-    # KPIs Promedios Generales (sin Enero, números enteros)
+    # KPIs Promedios Generales (números enteros)
     col1, col2, col3 = st.columns(3)
-    col1.metric(f"Promedio {m1} (Sin Enero)", f"{avg_m1}")
-    col2.metric(f"Promedio {m2} (Sin Enero)", f"{avg_m2}")
-    col3.metric("Meses Analizados (excl. Enero)", len(df_no_jan))
+    col1.metric(f"Promedio {m1}", f"{avg_m1}")
+    col2.metric(f"Promedio {m2}", f"{avg_m2}")
+    col3.metric("Meses Analizados", len(df_no_jan))
     
     st.markdown("---")
     
@@ -128,12 +126,11 @@ with tab_med:
     g_col1, g_col2 = st.columns([2, 1])
     
     with g_col1:
-        st.subheader("Evolución Mensual (Altas vs Bajas)")
+        st.subheader("Evolución Mensual")
         fig = go.Figure()
         fig.add_trace(go.Bar(x=df['Periodo'], y=df[m1], name=m1, marker_color='#2b5c8f'))
         fig.add_trace(go.Bar(x=df['Periodo'], y=df[m2], name=m2, marker_color='#d9534f'))
         
-        # Líneas de promedio sin Enero
         fig.add_hline(y=avg_m1, line_dash="dash", line_color="#2b5c8f", annotation_text=f"Prom. {m1}: {avg_m1}")
         fig.add_hline(y=avg_m2, line_dash="dash", line_color="#d9534f", annotation_text=f"Prom. {m2}: {avg_m2}")
         
@@ -148,13 +145,19 @@ with tab_med:
         fig_avg.update_layout(yaxis_title="Promedio Mensual", showlegend=False)
         st.plotly_chart(fig_avg, use_container_width=True)
 
-    # Tabla de datos sin la columna de Enero
+    # Tabla de datos mensuales limpia (solo Periodo, Métrica 1 y Métrica 2)
     st.subheader("📋 Tabla de Datos Mensuales")
     st.dataframe(
-        df[['Periodo', 'Mes', 'Año', m1, m2]],
+        df[['Periodo', m1, m2]],
         use_container_width=True,
         hide_index=True
     )
+    
+    # Tabla de acumulados anuales
+    st.markdown("---")
+    st.subheader("📅 Totales Anuales (Ingresos y Bajas)")
+    df_annual = df.groupby('Año')[[m1, m2]].sum().reset_index()
+    st.dataframe(df_annual, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
 # 2. JUICIOS
@@ -170,16 +173,16 @@ with tab_jui:
     avg_m2 = int(df_no_jan[m2].mean())
     
     col1, col2, col3 = st.columns(3)
-    col1.metric(f"Promedio {m1} (Sin Enero)", f"{avg_m1}")
-    col2.metric(f"Promedio {m2} (Sin Enero)", f"{avg_m2}")
-    col3.metric("Meses Analizados (excl. Enero)", len(df_no_jan))
+    col1.metric(f"Promedio {m1}", f"{avg_m1}")
+    col2.metric(f"Promedio {m2}", f"{avg_m2}")
+    col3.metric("Meses Analizados", len(df_no_jan))
     
     st.markdown("---")
     
     g_col1, g_col2 = st.columns([2, 1])
     
     with g_col1:
-        st.subheader("Evolución Mensual (Altas vs Bajas)")
+        st.subheader("Evolución Mensual")
         fig = go.Figure()
         fig.add_trace(go.Bar(x=df['Periodo'], y=df[m1], name=m1, marker_color='#17a2b8'))
         fig.add_trace(go.Bar(x=df['Periodo'], y=df[m2], name=m2, marker_color='#ffc107'))
@@ -198,13 +201,19 @@ with tab_jui:
         fig_avg.update_layout(yaxis_title="Promedio Mensual", showlegend=False)
         st.plotly_chart(fig_avg, use_container_width=True)
 
-    # Tabla de datos sin la columna de Enero
+    # Tabla de datos mensuales limpia
     st.subheader("📋 Tabla de Datos Mensuales")
     st.dataframe(
-        df[['Periodo', 'Mes', 'Año', m1, m2]],
+        df[['Periodo', m1, m2]],
         use_container_width=True,
         hide_index=True
     )
+    
+    # Tabla de acumulados anuales
+    st.markdown("---")
+    st.subheader("📅 Totales Anuales (Ingresos y Bajas)")
+    df_annual = df.groupby('Año')[[m1, m2]].sum().reset_index()
+    st.dataframe(df_annual, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
 # 3. SENTENCIAS
@@ -219,23 +228,23 @@ with tab_sen:
     avg_m1 = int(df_no_jan[m1].mean())
     avg_m2 = int(df_no_jan[m2].mean())
     
-    # % Rechazo Total respecto a Condena (Excluyendo Enero)
+    # % Rechazo Total respecto a Condena
     total_condena = df_no_jan[m1].sum()
     total_rechazo = df_no_jan[m2].sum()
     pct_total_rechazo = (total_rechazo / total_condena * 100) if total_condena > 0 else 0
     
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric(f"Promedio {m1} (Sin Enero)", f"{avg_m1}")
-    col2.metric(f"Promedio {m2} (Sin Enero)", f"{avg_m2}")
+    col1.metric(f"Promedio {m1}", f"{avg_m1}")
+    col2.metric(f"Promedio {m2}", f"{avg_m2}")
     col3.metric("% Total Rechazo / Condena", f"{pct_total_rechazo:.2f}%")
-    col4.metric("Meses Analizados (excl. Enero)", len(df_no_jan))
+    col4.metric("Meses Analizados", len(df_no_jan))
     
     st.markdown("---")
     
     g_col1, g_col2 = st.columns([2, 1])
     
     with g_col1:
-        st.subheader("Evolución Mensual (Condena vs Rechazada)")
+        st.subheader("Evolución Mensual")
         fig = go.Figure()
         fig.add_trace(go.Bar(x=df['Periodo'], y=df[m1], name=m1, marker_color='#28a745'))
         fig.add_trace(go.Bar(x=df['Periodo'], y=df[m2], name=m2, marker_color='#dc3545'))
@@ -268,13 +277,19 @@ with tab_sen:
     fig_pct.add_hline(y=pct_total_rechazo, line_dash="dot", line_color="#e83e8c", annotation_text=f"% General Total: {pct_total_rechazo:.1f}%")
     st.plotly_chart(fig_pct, use_container_width=True)
 
-    # Tabla de datos sin la columna de Enero
+    # Tabla de datos mensuales limpia
     st.subheader("📋 Tabla de Datos Mensuales con % de Rechazo")
     df_display = df.copy()
     df_display['% Rechazo s/ Condena'] = df_display['% Rechazo s/ Condena'].apply(lambda x: f"{x:.2f}%")
     
     st.dataframe(
-        df_display[['Periodo', 'Mes', 'Año', m1, m2, '% Rechazo s/ Condena']],
+        df_display[['Periodo', m1, m2, '% Rechazo s/ Condena']],
         use_container_width=True,
         hide_index=True
     )
+    
+    # Tabla de acumulados anuales
+    st.markdown("---")
+    st.subheader("📅 Totales Anuales (Condena y Rechazada)")
+    df_annual = df.groupby('Año')[[m1, m2]].sum().reset_index()
+    st.dataframe(df_annual, use_container_width=True, hide_index=True)
