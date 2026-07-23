@@ -119,11 +119,11 @@ def load_data(file):
         except Exception:
             presupuesto_data, embargos_data = None, None
 
-    # 4. Carga de la Hoja 4 (Evolución Trimestral de Stock)
+    # 4. Carga de la Hoja 4 (Evolución Trimestral de Stock - Forzando lectura en string puro)
     stock_evo_df = None
     if len(xls.sheet_names) > 3:
         try:
-            df_sheet4 = pd.read_excel(xls, sheet_name=3, header=None)
+            df_sheet4 = pd.read_excel(xls, sheet_name=3, header=None, dtype=str)
             stock_evo_df = parse_stock_evolution_sheet(df_sheet4)
         except Exception:
             stock_evo_df = None
@@ -226,7 +226,7 @@ def parse_juicios_extra_sheet(df_sheet):
 
 
 def parse_stock_evolution_sheet(df_sheet):
-    """Extrae dinómicamente la tabla de Evolución del Stock Trimestral de la Hoja 4"""
+    """Extrae dinómicamente la tabla de Evolución del Stock Trimestral respetando el texto exacto del Excel"""
     header_row = -1
     for r in range(len(df_sheet)):
         row_vals = [str(c).strip().upper() for c in df_sheet.iloc[r].tolist()]
@@ -246,11 +246,6 @@ def parse_stock_evolution_sheet(df_sheet):
         if '%' in c or 'AUMENTO' in c or 'VARIACION' in c:
             col_pct = idx
             break
-            
-    meses_map = {
-        1: 'ene', 2: 'feb', 3: 'mar', 4: 'abr', 5: 'may', 6: 'jun',
-        7: 'jul', 8: 'ago', 9: 'sept', 10: 'oct', 11: 'nov', 12: 'dic'
-    }
 
     records = []
     for r in range(header_row + 1, len(df_sheet)):
@@ -258,22 +253,16 @@ def parse_stock_evolution_sheet(df_sheet):
         cant_val = df_sheet.iloc[r, col_cant]
         pct_val = df_sheet.iloc[r, col_pct] if col_pct is not None else None
         
-        if pd.notna(tri_val) and str(tri_val).strip() != '' and str(tri_val).strip().upper() != 'NAN':
-            try:
-                cant_num = int(pd.to_numeric(cant_val))
-            except (ValueError, TypeError):
+        if pd.notna(tri_val):
+            tri_str = str(tri_val).strip()
+            if tri_str == '' or tri_str.upper() == 'NAN' or tri_str.upper() == 'NONE':
                 continue
                 
-            # Convertir cualquier formato de fecha/texto a 'mes-YY' (ej: sept-21, mar-24)
-            tri_str = str(tri_val).strip()
-            if isinstance(tri_val, (pd.Timestamp, datetime.date, datetime.datetime)):
-                tri_str = f"{meses_map.get(tri_val.month, tri_val.month)}-{str(tri_val.year)[-2:]}"
-            elif '-' in tri_str and len(tri_str) >= 10:
-                try:
-                    dt = pd.to_datetime(tri_str)
-                    tri_str = f"{meses_map.get(dt.month, dt.month)}-{str(dt.year)[-2:]}"
-                except Exception:
-                    pass
+            try:
+                cant_clean = str(cant_val).strip().replace('.', '').replace(',', '')
+                cant_num = int(float(cant_clean))
+            except (ValueError, TypeError):
+                continue
             
             pct_float = None
             pct_str = "-"
@@ -299,7 +288,8 @@ def parse_stock_evolution_sheet(df_sheet):
     if not df_res.empty:
         for i in range(len(df_res)):
             if i == 0:
-                df_res.loc[i, 'PCT_NUM'] = 0.0
+                if pd.isna(df_res.loc[i, 'PCT_NUM']):
+                    df_res.loc[i, 'PCT_NUM'] = 0.0
             else:
                 prev = df_res.loc[i-1, 'CANTIDAD']
                 curr = df_res.loc[i, 'CANTIDAD']
@@ -515,7 +505,6 @@ with tab_jui:
     st.markdown("---")
     render_trimestral_comparison(df, m1, m2)
 
-    # SECCIÓN: Presupuesto y Embargos (Hoja 3)
     st.markdown("---")
     st.subheader("💰 Presupuesto y Embargos")
     
@@ -675,7 +664,7 @@ with tab_stock_evo:
 
         st.markdown("---")
         
-        # 2. GRAFICOS DE ANCHO COMPLETO (DISPOSICIÓN VERTICAL)
+        # 2. GRAFICOS DE ANCHO COMPLETO
         
         # Gráfico 1: Evolución de Cantidades
         st.subheader("📉 Variación en Cantidad de Stock")
@@ -695,7 +684,7 @@ with tab_stock_evo:
         ))
         
         fig_cant.update_layout(
-            xaxis=dict(title="Trimestre", nticks=10),
+            xaxis=dict(title="Trimestre", type='category'),
             yaxis_title="Cantidad de Casos",
             hovermode="x unified",
             height=420,
@@ -722,7 +711,7 @@ with tab_stock_evo:
         
         fig_pct.add_hline(y=0, line_width=1, line_color="#000000")
         fig_pct.update_layout(
-            xaxis=dict(title="Trimestre", nticks=10),
+            xaxis=dict(title="Trimestre", type='category'),
             yaxis_title="Variación %",
             hovermode="x unified",
             height=420,
