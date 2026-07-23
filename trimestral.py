@@ -19,7 +19,7 @@ st.markdown("Análisis comparativo de **Mediaciones**, **Juicios** y **Sentencia
 # ---------------------------------------------------------
 @st.cache_data
 def load_data(file):
-    """Parsea el archivo Excel con las 3 secciones principales y la hoja de Stock"""
+    """Parsea el archivo Excel con las 3 secciones principales y las hojas de Stock y Juicios Extra"""
     xls = pd.ExcelFile(file)
     
     # 1. Carga de datos de la Hoja 1
@@ -73,7 +73,7 @@ def load_data(file):
         else:
             i += 1
             
-    # 2. Carga de la Hoja 2 (Stock) si existe
+    # 2. Carga de la Hoja 2 (Stock)
     stock_data = None
     if len(xls.sheet_names) > 1:
         try:
@@ -82,7 +82,16 @@ def load_data(file):
         except Exception:
             stock_data = None
 
-    return sections, stock_data
+    # 3. Carga de la Hoja 3 (Presupuesto y Embargos)
+    presupuesto_data, embargos_data = None, None
+    if len(xls.sheet_names) > 2:
+        try:
+            df_jui_extra = pd.read_excel(xls, sheet_name=2, header=None)
+            presupuesto_data, embargos_data = parse_juicios_extra_sheet(df_jui_extra)
+        except Exception:
+            presupuesto_data, embargos_data = None, None
+
+    return sections, stock_data, presupuesto_data, embargos_data
 
 
 def parse_stock_sheet(df_sheet):
@@ -94,14 +103,12 @@ def parse_stock_sheet(df_sheet):
     for r in range(len(df_sheet)):
         row_str = [str(cell).strip().upper() for cell in df_sheet.iloc[r].tolist()]
         
-        # Buscar "STOCK"
         if 'STOCK' in row_str:
             col_idx = row_str.index('STOCK')
             if r + 1 < len(df_sheet):
                 val = df_sheet.iloc[r+1, col_idx]
                 if pd.notna(val): stock_val = int(pd.to_numeric(val, errors='coerce'))
                 
-        # Buscar "AUTO" y "MOTO"
         if 'AUTO' in row_str and 'MOTO' in row_str:
             col_auto = row_str.index('AUTO')
             col_moto = row_str.index('MOTO')
@@ -113,7 +120,6 @@ def parse_stock_sheet(df_sheet):
             if r + 2 < len(df_sheet):
                 p_a = df_sheet.iloc[r+2, col_auto]
                 p_m = df_sheet.iloc[r+2, col_moto]
-                # Formatear porcentajes a enteros
                 if pd.notna(p_a):
                     num_a = float(p_a) * 100 if float(p_a) <= 1 else float(p_a)
                     auto_pct = f"{int(round(num_a))}%"
@@ -121,7 +127,6 @@ def parse_stock_sheet(df_sheet):
                     num_m = float(p_m) * 100 if float(p_m) <= 1 else float(p_m)
                     moto_pct = f"{int(round(num_m))}%"
 
-        # Buscar "TRIM. ANT"
         for col_idx, cell in enumerate(row_str):
             if 'TRIM. ANT' in cell or 'TRIM' in cell:
                 if r + 1 < len(df_sheet):
@@ -136,6 +141,44 @@ def parse_stock_sheet(df_sheet):
         'moto_val': moto_val,
         'moto_pct': moto_pct
     }
+
+
+def parse_juicios_extra_sheet(df_sheet):
+    """Extrae dinómicamente las tablas de Presupuesto y Embargos de la Hoja 3"""
+    presupuesto_list = []
+    embargos_list = []
+    
+    mode = None
+    for r in range(len(df_sheet)):
+        row = df_sheet.iloc[r].tolist()
+        cell_0 = str(row[0]).strip().upper() if pd.notna(row[0]) else ''
+        
+        if cell_0 == 'PRESUPUESTO':
+            mode = 'PRESUPUESTO'
+            continue
+        elif cell_0 == 'EMBARGOS':
+            mode = 'EMBARGOS'
+            continue
+            
+        if mode == 'PRESUPUESTO' and cell_0 != '':
+            mes = str(row[0]).strip()
+            monto = row[1]
+            if pd.notna(mes) and pd.notna(monto):
+                presupuesto_list.append({'MES': mes, 'MONTO': str(monto).strip()})
+                
+        elif mode == 'EMBARGOS' and cell_0 != '':
+            mes = str(row[0]).strip()
+            cant = row[1]
+            monto = row[2]
+            if pd.notna(mes) and pd.notna(cant):
+                cant_str = str(int(cant)) if isinstance(cant, (int, float)) and not pd.isna(cant) else str(cant).strip()
+                embargos_list.append({
+                    'MES': mes,
+                    'CANTIDAD': cant_str,
+                    'MONTO': str(monto).strip() if pd.notna(monto) else ''
+                })
+                
+    return pd.DataFrame(presupuesto_list), pd.DataFrame(embargos_list)
 
 
 def render_trimestral_comparison(df, m1, m2):
@@ -184,10 +227,10 @@ st.sidebar.header("📁 Cargar Datos")
 uploaded_file = st.sidebar.file_uploader("Seleccioná el archivo Excel (`.xlsx`)", type=["xlsx"])
 
 if uploaded_file is not None:
-    data, stock_info = load_data(uploaded_file)
+    data, stock_info, df_presupuesto, df_embargos = load_data(uploaded_file)
 else:
     try:
-        data, stock_info = load_data('TRIMESTRAL PRUEBA.xlsx')
+        data, stock_info, df_presupuesto, df_embargos = load_data('TRIMESTRAL PRUEBA.xlsx')
         st.sidebar.success("Usando archivo local de prueba.")
     except Exception:
         st.info("👋 Por favor cargá un archivo Excel en la barra lateral para continuar.")
@@ -205,12 +248,10 @@ with tab_med:
     df = sec['df']
     m1, m2 = sec['m1_name'], sec['m2_name']
     
-    # Filtrar sin Enero para los promedios
     df_no_jan = df[~df['Es_Enero']]
     avg_m1 = int(df_no_jan[m1].mean())
     avg_m2 = int(df_no_jan[m2].mean())
     
-    # KPIs Promedios Generales
     col1, col2, col3 = st.columns(3)
     col1.metric(f"Promedio {m1}", f"{avg_m1}")
     col2.metric(f"Promedio {m2}", f"{avg_m2}")
@@ -218,7 +259,6 @@ with tab_med:
     
     st.markdown("---")
     
-    # Gráficos
     g_col1, g_col2 = st.columns([2, 1])
     
     with g_col1:
@@ -241,7 +281,6 @@ with tab_med:
         fig_avg.update_layout(yaxis_title="Promedio Mensual", showlegend=False)
         st.plotly_chart(fig_avg, use_container_width=True)
 
-    # Tabla de datos mensuales limpia
     st.subheader("📋 Tabla de Datos Mensuales")
     st.dataframe(
         df[['Periodo', m1, m2]],
@@ -249,35 +288,27 @@ with tab_med:
         hide_index=True
     )
     
-    # Tabla de acumulados anuales
     st.markdown("---")
     st.subheader("📅 Totales Anuales (Ingresos y Bajas)")
     df_annual = df.groupby('Año')[[m1, m2]].sum().reset_index()
     st.dataframe(df_annual, use_container_width=True, hide_index=True)
 
-    # Análisis Trimestral Reciente
     st.markdown("---")
     render_trimestral_comparison(df, m1, m2)
 
-    # SECCIÓN NUEVA: Estado del Stock (Desde Hoja 2)
     st.markdown("---")
     st.subheader("📦 Estado e Información de Stock")
     
     if stock_info and stock_info['stock'] is not None:
         sc1, sc2, sc3, sc4 = st.columns(4)
-        
-        # Stock Actual
         sc1.metric("Stock Actual", f"{stock_info['stock']:,}".replace(",", "."))
         
-        # Auto
         auto_label = f"{stock_info['auto_val']:,}".replace(",", ".") if stock_info['auto_val'] else "-"
         sc2.metric("🚗 Auto", auto_label, delta=stock_info['auto_pct'], delta_color="off")
         
-        # Moto
         moto_label = f"{stock_info['moto_val']:,}".replace(",", ".") if stock_info['moto_val'] else "-"
         sc3.metric("🏍️ Moto", moto_label, delta=stock_info['moto_pct'], delta_color="off")
         
-        # Trimestre Anterior y Variación
         if stock_info['trim_ant'] is not None:
             trim_ant_val = stock_info['trim_ant']
             diff_stock = stock_info['stock'] - trim_ant_val
@@ -334,7 +365,6 @@ with tab_jui:
         fig_avg.update_layout(yaxis_title="Promedio Mensual", showlegend=False)
         st.plotly_chart(fig_avg, use_container_width=True)
 
-    # Tabla de datos mensuales limpia
     st.subheader("📋 Tabla de Datos Mensuales")
     st.dataframe(
         df[['Periodo', m1, m2]],
@@ -342,15 +372,33 @@ with tab_jui:
         hide_index=True
     )
     
-    # Tabla de acumulados anuales
     st.markdown("---")
     st.subheader("📅 Totales Anuales (Ingresos y Bajas)")
     df_annual = df.groupby('Año')[[m1, m2]].sum().reset_index()
     st.dataframe(df_annual, use_container_width=True, hide_index=True)
 
-    # Análisis Trimestral Reciente
     st.markdown("---")
     render_trimestral_comparison(df, m1, m2)
+
+    # SECCIÓN NUEVA: Presupuesto y Embargos (Desde Hoja 3)
+    st.markdown("---")
+    st.subheader("💰 Presupuesto y Embargos")
+    
+    j_col1, j_col2 = st.columns(2)
+    
+    with j_col1:
+        st.markdown("#### 📌 Presupuesto")
+        if df_presupuesto is not None and not df_presupuesto.empty:
+            st.dataframe(df_presupuesto, use_container_width=True, hide_index=True)
+        else:
+            st.info("ℹ️ No se encontraron datos de Presupuesto en la Hoja 3.")
+            
+    with j_col2:
+        st.markdown("#### 🔒 Embargos")
+        if df_embargos is not None and not df_embargos.empty:
+            st.dataframe(df_embargos, use_container_width=True, hide_index=True)
+        else:
+            st.info("ℹ️ No se encontraron datos de Embargos en la Hoja 3.")
 
 # ---------------------------------------------------------
 # 3. SENTENCIAS
@@ -359,7 +407,7 @@ with tab_sen:
     st.header("📜 Análisis de Sentencias / Demandas")
     sec = data['SENTENCIAS']
     df = sec['df']
-    m1, m2 = sec['m1_name'], sec['m2_name']  # CONDENA y RECHAZADA
+    m1, m2 = sec['m1_name'], sec['m2_name']
     
     df_no_jan = df[~df['Es_Enero']]
     avg_m1 = int(df_no_jan[m1].mean())
