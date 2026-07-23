@@ -15,25 +15,32 @@ st.title("📊 Informe Trimestral de Gestión Judicial")
 st.markdown("Análisis comparativo de **Mediaciones**, **Juicios** y **Sentencias**.")
 
 # ---------------------------------------------------------
-# FUNCIONES AUXILIARES DE FORMATO
+# FUNCIONES AUXILIARES DE FORMATO DE MONEDA
 # ---------------------------------------------------------
-def format_currency(val):
-    """Formatea valores numéricos en formato de moneda ($ 1.234.567,89)"""
-    if pd.isna(val) or val == "":
+def format_currency_exact(val):
+    """Garantiza el formato exacto estilo Excel: $ 1.234.567 o $ 1.234.567,89"""
+    if pd.isna(val) or val == "" or val is None:
         return ""
+    
+    val_str = str(val).strip()
+    
+    # Si ya viene con el signo $ del Excel, lo devolvemos tal cual
+    if '$' in val_str:
+        return val_str
+        
+    # Intentamos formatear si viene como entero/float numérico
     try:
-        if isinstance(val, str):
-            val_clean = val.replace('$', '').replace(' ', '').replace('.', '').replace(',', '.')
-            num = float(val_clean)
-        else:
-            num = float(val)
-            
+        num = float(val_str.replace('.', '').replace(',', '.')) if ',' in val_str and '.' in val_str else float(val_str)
+        num = round(num, 2)
+        
         if num.is_integer():
-            return f"$ {int(num):,}".replace(",", ".")
+            formatted = f"{int(num):,}".replace(",", ".")
         else:
-            return f"$ {num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            formatted = f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            
+        return f"$ {formatted}"
     except (ValueError, TypeError):
-        return str(val).strip()
+        return val_str
 
 
 # ---------------------------------------------------------
@@ -108,7 +115,8 @@ def load_data(file):
     presupuesto_data, embargos_data = None, None
     if len(xls.sheet_names) > 2:
         try:
-            df_jui_extra = pd.read_excel(xls, sheet_name=2, header=None)
+            # Forzamos tipo texto al leer para intentar conservar el formato exacto
+            df_jui_extra = pd.read_excel(xls, sheet_name=2, header=None, dtype=str)
             presupuesto_data, embargos_data = parse_juicios_extra_sheet(df_jui_extra)
         except Exception:
             presupuesto_data, embargos_data = None, None
@@ -182,25 +190,32 @@ def parse_juicios_extra_sheet(df_sheet):
             mode = 'EMBARGOS'
             continue
             
-        if mode == 'PRESUPUESTO' and cell_0 != '':
+        if mode == 'PRESUPUESTO' and cell_0 != '' and cell_0 != 'NAN':
             mes = str(row[0]).strip()
             monto = row[1]
-            if pd.notna(mes) and pd.notna(monto):
+            if pd.notna(monto) and str(monto).strip().upper() != 'NAN':
                 presupuesto_list.append({
                     'MES': mes,
-                    'MONTO': format_currency(monto)
+                    'MONTO': format_currency_exact(monto)
                 })
                 
-        elif mode == 'EMBARGOS' and cell_0 != '':
+        elif mode == 'EMBARGOS' and cell_0 != '' and cell_0 != 'NAN':
             mes = str(row[0]).strip()
             cant = row[1]
             monto = row[2]
-            if pd.notna(mes) and pd.notna(cant):
-                cant_str = str(int(cant)) if isinstance(cant, (int, float)) and not pd.isna(cant) else str(cant).strip()
+            
+            # Omitir fila de encabezados "CANTIDAD" "MONTO"
+            if str(cant).strip().upper() == 'CANTIDAD':
+                continue
+                
+            if pd.notna(cant) and str(cant).strip().upper() != 'NAN':
+                # Formatear la cantidad como entero si aplica
+                cant_str = str(cant).strip().split('.')[0] if '.' in str(cant) else str(cant).strip()
+                
                 embargos_list.append({
                     'MES': mes,
                     'CANTIDAD': cant_str,
-                    'MONTO': format_currency(monto)
+                    'MONTO': format_currency_exact(monto)
                 })
                 
     return pd.DataFrame(presupuesto_list), pd.DataFrame(embargos_list)
