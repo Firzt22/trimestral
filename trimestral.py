@@ -113,13 +113,13 @@ with tab_med:
     
     # Filtrar sin Enero para los promedios
     df_no_jan = df[~df['Es_Enero']]
-    avg_m1 = df_no_jan[m1].mean()
-    avg_m2 = df_no_jan[m2].mean()
+    avg_m1 = int(df_no_jan[m1].mean())
+    avg_m2 = int(df_no_jan[m2].mean())
     
-    # KPIs Promedios Generales (sin Enero)
+    # KPIs Promedios Generales (sin Enero, números enteros)
     col1, col2, col3 = st.columns(3)
-    col1.metric(f"Promedio {m1} (Sin Enero)", f"{avg_m1:.2f}")
-    col2.metric(f"Promedio {m2} (Sin Enero)", f"{avg_m2:.2f}")
+    col1.metric(f"Promedio {m1} (Sin Enero)", f"{avg_m1}")
+    col2.metric(f"Promedio {m2} (Sin Enero)", f"{avg_m2}")
     col3.metric("Meses Analizados (excl. Enero)", len(df_no_jan))
     
     st.markdown("---")
@@ -134,8 +134,8 @@ with tab_med:
         fig.add_trace(go.Bar(x=df['Periodo'], y=df[m2], name=m2, marker_color='#d9534f'))
         
         # Líneas de promedio sin Enero
-        fig.add_hline(y=avg_m1, line_dash="dash", line_color="#2b5c8f", annotation_text=f"Prom. {m1}: {avg_m1:.1f}")
-        fig.add_hline(y=avg_m2, line_dash="dash", line_color="#d9534f", annotation_text=f"Prom. {m2}: {avg_m2:.1f}")
+        fig.add_hline(y=avg_m1, line_dash="dash", line_color="#2b5c8f", annotation_text=f"Prom. {m1}: {avg_m1}")
+        fig.add_hline(y=avg_m2, line_dash="dash", line_color="#d9534f", annotation_text=f"Prom. {m2}: {avg_m2}")
         
         fig.update_layout(barmode='group', xaxis_title="Período", yaxis_title="Cantidad", legend=dict(orientation="h", y=1.1))
         st.plotly_chart(fig, use_container_width=True)
@@ -143,17 +143,15 @@ with tab_med:
     with g_col2:
         st.subheader("Promedios Generales")
         fig_avg = go.Figure(data=[
-            go.Bar(name='Promedio', x=[m1, m2], y=[avg_m1, avg_m2], marker_color=['#2b5c8f', '#d9534f'], text=[f"{avg_m1:.1f}", f"{avg_m2:.1f}"], textposition='auto')
+            go.Bar(name='Promedio', x=[m1, m2], y=[avg_m1, avg_m2], marker_color=['#2b5c8f', '#d9534f'], text=[f"{avg_m1}", f"{avg_m2}"], textposition='auto')
         ])
         fig_avg.update_layout(yaxis_title="Promedio Mensual", showlegend=False)
         st.plotly_chart(fig_avg, use_container_width=True)
 
-    # Tabla de datos
+    # Tabla de datos sin la columna de Enero
     st.subheader("📋 Tabla de Datos Mensuales")
-    df_display = df.copy()
-    df_display['Excluido (Enero)'] = df_display['Es_Enero'].map({True: 'Sí ❌', False: 'No ✅'})
     st.dataframe(
-        df_display[['Periodo', 'Mes', 'Año', m1, m2, 'Excluido (Enero)']],
+        df[['Periodo', 'Mes', 'Año', m1, m2]],
         use_container_width=True,
         hide_index=True
     )
@@ -168,12 +166,12 @@ with tab_jui:
     m1, m2 = sec['m1_name'], sec['m2_name']
     
     df_no_jan = df[~df['Es_Enero']]
-    avg_m1 = df_no_jan[m1].mean()
-    avg_m2 = df_no_jan[m2].mean()
+    avg_m1 = int(df_no_jan[m1].mean())
+    avg_m2 = int(df_no_jan[m2].mean())
     
     col1, col2, col3 = st.columns(3)
-    col1.metric(f"Promedio {m1} (Sin Enero)", f"{avg_m1:.2f}")
-    col2.metric(f"Promedio {m2} (Sin Enero)", f"{avg_m2:.2f}")
+    col1.metric(f"Promedio {m1} (Sin Enero)", f"{avg_m1}")
+    col2.metric(f"Promedio {m2} (Sin Enero)", f"{avg_m2}")
     col3.metric("Meses Analizados (excl. Enero)", len(df_no_jan))
     
     st.markdown("---")
@@ -186,8 +184,8 @@ with tab_jui:
         fig.add_trace(go.Bar(x=df['Periodo'], y=df[m1], name=m1, marker_color='#17a2b8'))
         fig.add_trace(go.Bar(x=df['Periodo'], y=df[m2], name=m2, marker_color='#ffc107'))
         
-        fig.add_hline(y=avg_m1, line_dash="dash", line_color="#17a2b8", annotation_text=f"Prom. {m1}: {avg_m1:.1f}")
-        fig.add_hline(y=avg_m2, line_dash="dash", line_color="#ffc107", annotation_text=f"Prom. {m2}: {avg_m2:.1f}")
+        fig.add_hline(y=avg_m1, line_dash="dash", line_color="#17a2b8", annotation_text=f"Prom. {m1}: {avg_m1}")
+        fig.add_hline(y=avg_m2, line_dash="dash", line_color="#ffc107", annotation_text=f"Prom. {m2}: {avg_m2}")
         
         fig.update_layout(barmode='group', xaxis_title="Período", yaxis_title="Cantidad", legend=dict(orientation="h", y=1.1))
         st.plotly_chart(fig, use_container_width=True)
@@ -195,16 +193,15 @@ with tab_jui:
     with g_col2:
         st.subheader("Promedios Generales")
         fig_avg = go.Figure(data=[
-            go.Bar(name='Promedio', x=[m1, m2], y=[avg_m1, avg_m2], marker_color=['#17a2b8', '#ffc107'], text=[f"{avg_m1:.1f}", f"{avg_m2:.1f}"], textposition='auto')
+            go.Bar(name='Promedio', x=[m1, m2], y=[avg_m1, avg_m2], marker_color=['#17a2b8', '#ffc107'], text=[f"{avg_m1}", f"{avg_m2}"], textposition='auto')
         ])
         fig_avg.update_layout(yaxis_title="Promedio Mensual", showlegend=False)
         st.plotly_chart(fig_avg, use_container_width=True)
 
+    # Tabla de datos sin la columna de Enero
     st.subheader("📋 Tabla de Datos Mensuales")
-    df_display = df.copy()
-    df_display['Excluido (Enero)'] = df_display['Es_Enero'].map({True: 'Sí ❌', False: 'No ✅'})
     st.dataframe(
-        df_display[['Periodo', 'Mes', 'Año', m1, m2, 'Excluido (Enero)']],
+        df[['Periodo', 'Mes', 'Año', m1, m2]],
         use_container_width=True,
         hide_index=True
     )
@@ -219,8 +216,8 @@ with tab_sen:
     m1, m2 = sec['m1_name'], sec['m2_name']  # CONDENA y RECHAZADA
     
     df_no_jan = df[~df['Es_Enero']]
-    avg_m1 = df_no_jan[m1].mean()
-    avg_m2 = df_no_jan[m2].mean()
+    avg_m1 = int(df_no_jan[m1].mean())
+    avg_m2 = int(df_no_jan[m2].mean())
     
     # % Rechazo Total respecto a Condena (Excluyendo Enero)
     total_condena = df_no_jan[m1].sum()
@@ -228,8 +225,8 @@ with tab_sen:
     pct_total_rechazo = (total_rechazo / total_condena * 100) if total_condena > 0 else 0
     
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric(f"Promedio {m1} (Sin Enero)", f"{avg_m1:.2f}")
-    col2.metric(f"Promedio {m2} (Sin Enero)", f"{avg_m2:.2f}")
+    col1.metric(f"Promedio {m1} (Sin Enero)", f"{avg_m1}")
+    col2.metric(f"Promedio {m2} (Sin Enero)", f"{avg_m2}")
     col3.metric("% Total Rechazo / Condena", f"{pct_total_rechazo:.2f}%")
     col4.metric("Meses Analizados (excl. Enero)", len(df_no_jan))
     
@@ -243,8 +240,8 @@ with tab_sen:
         fig.add_trace(go.Bar(x=df['Periodo'], y=df[m1], name=m1, marker_color='#28a745'))
         fig.add_trace(go.Bar(x=df['Periodo'], y=df[m2], name=m2, marker_color='#dc3545'))
         
-        fig.add_hline(y=avg_m1, line_dash="dash", line_color="#28a745", annotation_text=f"Prom. {m1}: {avg_m1:.1f}")
-        fig.add_hline(y=avg_m2, line_dash="dash", line_color="#dc3545", annotation_text=f"Prom. {m2}: {avg_m2:.1f}")
+        fig.add_hline(y=avg_m1, line_dash="dash", line_color="#28a745", annotation_text=f"Prom. {m1}: {avg_m1}")
+        fig.add_hline(y=avg_m2, line_dash="dash", line_color="#dc3545", annotation_text=f"Prom. {m2}: {avg_m2}")
         
         fig.update_layout(barmode='group', xaxis_title="Período", yaxis_title="Cantidad", legend=dict(orientation="h", y=1.1))
         st.plotly_chart(fig, use_container_width=True)
@@ -252,7 +249,7 @@ with tab_sen:
     with g_col2:
         st.subheader("Promedios Generales")
         fig_avg = go.Figure(data=[
-            go.Bar(name='Promedio', x=[m1, m2], y=[avg_m1, avg_m2], marker_color=['#28a745', '#dc3545'], text=[f"{avg_m1:.1f}", f"{avg_m2:.1f}"], textposition='auto')
+            go.Bar(name='Promedio', x=[m1, m2], y=[avg_m1, avg_m2], marker_color=['#28a745', '#dc3545'], text=[f"{avg_m1}", f"{avg_m2}"], textposition='auto')
         ])
         fig_avg.update_layout(yaxis_title="Promedio Mensual", showlegend=False)
         st.plotly_chart(fig_avg, use_container_width=True)
@@ -271,13 +268,13 @@ with tab_sen:
     fig_pct.add_hline(y=pct_total_rechazo, line_dash="dot", line_color="#e83e8c", annotation_text=f"% General Total: {pct_total_rechazo:.1f}%")
     st.plotly_chart(fig_pct, use_container_width=True)
 
+    # Tabla de datos sin la columna de Enero
     st.subheader("📋 Tabla de Datos Mensuales con % de Rechazo")
     df_display = df.copy()
     df_display['% Rechazo s/ Condena'] = df_display['% Rechazo s/ Condena'].apply(lambda x: f"{x:.2f}%")
-    df_display['Excluido (Enero)'] = df_display['Es_Enero'].map({True: 'Sí ❌', False: 'No ✅'})
     
     st.dataframe(
-        df_display[['Periodo', 'Mes', 'Año', m1, m2, '% Rechazo s/ Condena', 'Excluido (Enero)']],
+        df_display[['Periodo', 'Mes', 'Año', m1, m2, '% Rechazo s/ Condena']],
         use_container_width=True,
         hide_index=True
     )
