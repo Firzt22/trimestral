@@ -23,6 +23,12 @@ def load_data(file):
     df_raw = pd.read_excel(file, header=None)
     sections = {}
     
+    # Diccionarios para meses en español
+    meses_cortos_es = {
+        1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
+        7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'
+    }
+    
     i = 0
     while i < len(df_raw):
         val = str(df_raw.iloc[i, 0]).strip().upper()
@@ -52,13 +58,8 @@ def load_data(file):
             df_sec['Año'] = df_sec['Fecha'].dt.year
             df_sec['Mes_Num'] = df_sec['Fecha'].dt.month
             
-            # Mapeo de meses en español
-            meses_es = {
-                1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
-                7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
-            }
-            df_sec['Mes'] = df_sec['Mes_Num'].map(meses_es)
-            df_sec['Periodo'] = df_sec['Fecha'].dt.strftime('%b-%Y')
+            # Periodo formateado en español (Ej: Ene-2025)
+            df_sec['Periodo'] = df_sec['Fecha'].apply(lambda d: f"{meses_cortos_es[d.month]}-{d.year}")
             df_sec['Es_Enero'] = df_sec['Mes_Num'] == 1
             
             # Si es Sentencias, calcular % de Rechazo sobre Condena por mes
