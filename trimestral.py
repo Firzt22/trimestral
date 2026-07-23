@@ -46,7 +46,7 @@ def load_data(file):
                 'Fecha': dates,
                 m1_name: m1_vals,
                 m2_name: m2_vals
-            }).dropna(subset=['Fecha']).reset_index(drop=True)
+            }).dropna(subset=['Fecha']).sort_values('Fecha').reset_index(drop=True)
             
             # Formateo y creación de banderas de filtro
             df_sec['Año'] = df_sec['Fecha'].dt.year
@@ -79,6 +79,45 @@ def load_data(file):
             i += 1
             
     return sections
+
+def render_trimestral_comparison(df, m1, m2):
+    """Genera la sección comparativa del último trimestre vs el trimestre anterior"""
+    if len(df) < 6:
+        st.warning("Se necesitan al menos 6 meses de datos para realizar la comparación trimestral.")
+        return
+    
+    # Selección de los últimos 3 meses y los 3 meses anteriores
+    last_3 = df.iloc[-3:]
+    prev_3 = df.iloc[-6:-3]
+    
+    p_last = f"{last_3.iloc[0]['Periodo']} a {last_3.iloc[-1]['Periodo']}"
+    p_prev = f"{prev_3.iloc[0]['Periodo']} a {prev_3.iloc[-1]['Periodo']}"
+    
+    m1_last, m1_prev = int(last_3[m1].sum()), int(prev_3[m1].sum())
+    m2_last, m2_prev = int(last_3[m2].sum()), int(prev_3[m2].sum())
+    
+    diff_m1 = m1_last - m1_prev
+    diff_m2 = m2_last - m2_prev
+    
+    pct_m1 = int(round((diff_m1 / m1_prev * 100))) if m1_prev > 0 else 0
+    pct_m2 = int(round((diff_m2 / m2_prev * 100))) if m2_prev > 0 else 0
+    
+    st.subheader("📉 Comparativo Trimestral Reciente")
+    st.caption(f"Comparando **Último Trimestre** ({p_last}) vs **Trimestre Anterior** ({p_prev})")
+    
+    c1, c2 = st.columns(2)
+    
+    c1.metric(
+        label=f"Total {m1} (Último Trimestre)",
+        value=f"{m1_last}",
+        delta=f"{diff_m1:+d} ({pct_m1:+d}%) respecto a {p_prev}"
+    )
+    
+    c2.metric(
+        label=f"Total {m2} (Último Trimestre)",
+        value=f"{m2_last}",
+        delta=f"{diff_m2:+d} ({pct_m2:+d}%) respecto a {p_prev}"
+    )
 
 
 # ---------------------------------------------------------
@@ -114,7 +153,7 @@ with tab_med:
     avg_m1 = int(df_no_jan[m1].mean())
     avg_m2 = int(df_no_jan[m2].mean())
     
-    # KPIs Promedios Generales (números enteros)
+    # KPIs Promedios Generales
     col1, col2, col3 = st.columns(3)
     col1.metric(f"Promedio {m1}", f"{avg_m1}")
     col2.metric(f"Promedio {m2}", f"{avg_m2}")
@@ -158,6 +197,10 @@ with tab_med:
     st.subheader("📅 Totales Anuales (Ingresos y Bajas)")
     df_annual = df.groupby('Año')[[m1, m2]].sum().reset_index()
     st.dataframe(df_annual, use_container_width=True, hide_index=True)
+
+    # Análisis Trimestral Reciente
+    st.markdown("---")
+    render_trimestral_comparison(df, m1, m2)
 
 # ---------------------------------------------------------
 # 2. JUICIOS
@@ -215,6 +258,10 @@ with tab_jui:
     df_annual = df.groupby('Año')[[m1, m2]].sum().reset_index()
     st.dataframe(df_annual, use_container_width=True, hide_index=True)
 
+    # Análisis Trimestral Reciente
+    st.markdown("---")
+    render_trimestral_comparison(df, m1, m2)
+
 # ---------------------------------------------------------
 # 3. SENTENCIAS
 # ---------------------------------------------------------
@@ -228,7 +275,7 @@ with tab_sen:
     avg_m1 = int(df_no_jan[m1].mean())
     avg_m2 = int(df_no_jan[m2].mean())
     
-    # % Rechazo Total respecto a Condena (Número entero)
+    # % Rechazo Total respecto a Condena
     total_condena = df_no_jan[m1].sum()
     total_rechazo = df_no_jan[m2].sum()
     pct_total_rechazo = int(round(total_rechazo / total_condena * 100)) if total_condena > 0 else 0
@@ -272,7 +319,7 @@ with tab_sen:
         color='Es_Enero',
         color_discrete_map={True: '#999999', False: '#6f42c1'},
         labels={'% Rechazo s/ Condena': '% Rechazo', 'Es_Enero': 'Mes de Enero'},
-        text_auto='.0f'  # Formato número entero sin decimales
+        text_auto='.0f'
     )
     fig_pct.add_hline(y=pct_total_rechazo, line_dash="dot", line_color="#e83e8c", annotation_text=f"% General Total: {pct_total_rechazo}%")
     st.plotly_chart(fig_pct, use_container_width=True)
@@ -293,7 +340,6 @@ with tab_sen:
     st.subheader("📅 Totales Anuales (Condena y Rechazada)")
     df_annual = df.groupby('Año')[[m1, m2]].sum().reset_index()
     
-    # Cálculo del % de Rechazo sobre Condena en el acumulado anual (número entero)
     df_annual['% Rechazo s/ Condena'] = np.where(
         df_annual[m1] > 0,
         (df_annual[m2] / df_annual[m1] * 100).round().astype(int).astype(str) + '%',
@@ -301,3 +347,7 @@ with tab_sen:
     )
     
     st.dataframe(df_annual, use_container_width=True, hide_index=True)
+
+    # Análisis Trimestral Reciente
+    st.markdown("---")
+    render_trimestral_comparison(df, m1, m2)
