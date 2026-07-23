@@ -15,7 +15,7 @@ st.title("📊 Informe Trimestral de Gestión Judicial")
 st.markdown("Análisis comparativo de **Mediaciones**, **Juicios**, **Sentencias** y **Evolución del Stock**.")
 
 # ---------------------------------------------------------
-# FUNCIONES AUXILIARES DE FORMATO DE MONEDA Y TABLA
+# FUNCIONES AUXILIARES DE FORMATO DE MONEDA Y FECHAS
 # ---------------------------------------------------------
 def format_currency_exact(val):
     """Garantiza el formato exacto estilo Excel: $ 1.234.567 o $ 1.234.567,89"""
@@ -39,6 +39,27 @@ def format_currency_exact(val):
         return f"$ {formatted}"
     except (ValueError, TypeError):
         return val_str
+
+def format_trimestre_label(tri_val):
+    """Convierte cualquier fecha o formato raro de Excel al estilo sept-21, mar-24, etc."""
+    if pd.isna(tri_val):
+        return ""
+    
+    s = str(tri_val).strip()
+    
+    # Si viene como timestamp de pandas / excel (ej: "2024-03-01 00:00:00")
+    if '-' in s and len(s) >= 10:
+        try:
+            dt = pd.to_datetime(s)
+            meses_map = {1: 'ene', 2: 'feb', 3: 'mar', 4: 'abr', 5: 'may', 6: 'jun',
+                         7: 'jul', 8: 'ago', 9: 'sept', 10: 'oct', 11: 'nov', 12: 'dic'}
+            mes_str = meses_map.get(dt.month, str(dt.month))
+            yy_str = str(dt.year)[-2:]
+            return f"{mes_str}-{yy_str}"
+        except Exception:
+            pass
+            
+    return s
 
 
 # ---------------------------------------------------------
@@ -258,6 +279,9 @@ def parse_stock_evolution_sheet(df_sheet):
             except (ValueError, TypeError):
                 continue
                 
+            # Formatear la etiqueta del trimestre (ej. sept-21)
+            tri_clean = format_trimestre_label(tri_val)
+            
             pct_float = None
             pct_str = "-"
             if pd.notna(pct_val):
@@ -271,7 +295,7 @@ def parse_stock_evolution_sheet(df_sheet):
                     pct_str = str(pct_val).strip()
                     
             records.append({
-                'TRIMESTRE': str(tri_val).strip(),
+                'TRIMESTRE': tri_clean,
                 'CANTIDAD': cant_num,
                 'PCT_NUM': pct_float,
                 'PCT_STR': pct_str
@@ -279,7 +303,6 @@ def parse_stock_evolution_sheet(df_sheet):
             
     df_res = pd.DataFrame(records)
     
-    # Calcular variaciones numéricas si PCT_NUM vino nulo desde Excel
     if not df_res.empty:
         for i in range(len(df_res)):
             if i == 0:
@@ -623,7 +646,6 @@ with tab_stock_evo:
                 pct_val = row['PCT_NUM']
                 styles = [''] * len(row)
                 if pd.notna(pct_val) and pct_val < 0:
-                    # Aplicar rojo y negrita a la fila completa si bajó el stock
                     styles = ['color: #d9534f; font-weight: bold;'] * len(row)
                 return styles
 
@@ -649,7 +671,6 @@ with tab_stock_evo:
             prev_row = df_stock_evo.iloc[-2] if len(df_stock_evo) > 1 else last_row
             
             diff_abs = last_row['CANTIDAD'] - prev_row['CANTIDAD']
-            pct_val = last_row['PCT_NUM']
             
             m_col1, m_col2 = st.columns(2)
             m_col1.metric("Stock Actual", f"{last_row['CANTIDAD']:,}".replace(",", "."))
@@ -659,65 +680,65 @@ with tab_stock_evo:
                 delta=f"{diff_abs:+d} casos vs {prev_row['TRIMESTRE']}"
             )
             
-            st.info("💡 **Nota:** La tabla y gráficos se actualizan automáticamente al añadir nuevos trimestres en la Hoja 4 del Excel.")
+            st.info("💡 **Nota:** La tabla y los gráficos se actualizan automáticamente al añadir nuevos trimestres en la Hoja 4 del Excel.")
 
         st.markdown("---")
         
-        # 2. GRAFICOS
-        g1, g2 = st.columns(2)
+        # 2. GRAFICOS (UNO DEBAJO DEL OTRO APERADOS DE ANCHO COMPLETO)
         
         # Gráfico 1: Evolución de Cantidades
-        with g1:
-            st.subheader("📉 Variación en Cantidad de Stock")
-            
-            # Identificar colores para cada punto/línea
-            colors_line = ['#2b5c8f' if p >= 0 else '#d9534f' for p in df_stock_evo['PCT_NUM']]
-            
-            fig_cant = go.Figure()
-            fig_cant.add_trace(go.Scatter(
-                x=df_stock_evo['TRIMESTRE'],
-                y=df_stock_evo['CANTIDAD'],
-                mode='lines+markers+text',
-                text=[f"{v:,}".replace(",", ".") for v in df_stock_evo['CANTIDAD']],
-                textposition="top center",
-                line=dict(color='#2b5c8f', width=3),
-                marker=dict(size=8, color=colors_line),
-                name="Cantidad Stock"
-            ))
-            
-            fig_cant.update_layout(
-                xaxis_title="Trimestre",
-                yaxis_title="Cantidad de Casos",
-                hovermode="x unified",
-                margin=dict(t=30, b=20)
-            )
-            st.plotly_chart(fig_cant, use_container_width=True)
+        st.subheader("📉 Variación en Cantidad de Stock (Trimestre a Trimestre)")
+        
+        colors_line = ['#2b5c8f' if p >= 0 else '#d9534f' for p in df_stock_evo['PCT_NUM']]
+        
+        fig_cant = go.Figure()
+        fig_cant.add_trace(go.Scatter(
+            x=df_stock_evo['TRIMESTRE'],
+            y=df_stock_evo['CANTIDAD'],
+            mode='lines+markers+text',
+            text=[f"{v:,}".replace(",", ".") for v in df_stock_evo['CANTIDAD']],
+            textposition="top center",
+            line=dict(color='#2b5c8f', width=3),
+            marker=dict(size=9, color=colors_line),
+            name="Cantidad Stock"
+        ))
+        
+        # type='category' obliga a Plotly a listar cada trimestre exacto en el eje X
+        fig_cant.update_layout(
+            xaxis=dict(type='category', title="Trimestre", tickangle=0),
+            yaxis_title="Cantidad de Casos",
+            hovermode="x unified",
+            height=400,
+            margin=dict(t=30, b=30, l=40, r=40)
+        )
+        st.plotly_chart(fig_cant, use_container_width=True)
+
+        st.markdown("---")
 
         # Gráfico 2: Evolución Porcentual (% DE AUMENTO)
-        with g2:
-            st.subheader("📊 Variación Porcentual (%)")
-            
-            # Asignar color azul/verde para positivo y rojo para negativo
-            bar_colors = ['#d9534f' if val < 0 else '#28a745' for val in df_stock_evo['PCT_NUM']]
-            
-            fig_pct = go.Figure()
-            fig_pct.add_trace(go.Bar(
-                x=df_stock_evo['TRIMESTRE'],
-                y=df_stock_evo['PCT_NUM'],
-                marker_color=bar_colors,
-                text=df_stock_evo['PCT_STR'],
-                textposition='auto',
-                name="% Variación"
-            ))
-            
-            fig_pct.add_hline(y=0, line_width=1, line_color="#000000")
-            fig_pct.update_layout(
-                xaxis_title="Trimestre",
-                yaxis_title="Variación %",
-                hovermode="x unified",
-                margin=dict(t=30, b=20)
-            )
-            st.plotly_chart(fig_pct, use_container_width=True)
+        st.subheader("📊 Variación Porcentual del Stock (%)")
+        
+        bar_colors = ['#d9534f' if val < 0 else '#28a745' for val in df_stock_evo['PCT_NUM']]
+        
+        fig_pct = go.Figure()
+        fig_pct.add_trace(go.Bar(
+            x=df_stock_evo['TRIMESTRE'],
+            y=df_stock_evo['PCT_NUM'],
+            marker_color=bar_colors,
+            text=df_stock_evo['PCT_STR'],
+            textposition='auto',
+            name="% Variación"
+        ))
+        
+        fig_pct.add_hline(y=0, line_width=1, line_color="#000000")
+        fig_pct.update_layout(
+            xaxis=dict(type='category', title="Trimestre", tickangle=0),
+            yaxis_title="Variación %",
+            hovermode="x unified",
+            height=400,
+            margin=dict(t=30, b=30, l=40, r=40)
+        )
+        st.plotly_chart(fig_pct, use_container_width=True)
 
     else:
         st.info("ℹ️ Para visualizar esta pestaña, asegurate de tener la **Hoja 4** cargada en tu Excel con las columnas `TRIMESTRE`, `CANTIDAD` y `% DE AUMENTO`.")
