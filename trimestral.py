@@ -1,3 +1,4 @@
+import datetime
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -15,7 +16,7 @@ st.title("📊 Informe Trimestral de Gestión Judicial")
 st.markdown("Análisis comparativo de **Mediaciones**, **Juicios**, **Sentencias** y **Evolución del Stock**.")
 
 # ---------------------------------------------------------
-# FUNCIONES AUXILIARES DE FORMATO DE MONEDA Y FECHAS
+# FUNCIONES AUXILIARES DE FORMATO
 # ---------------------------------------------------------
 def format_currency_exact(val):
     """Garantiza el formato exacto estilo Excel: $ 1.234.567 o $ 1.234.567,89"""
@@ -39,27 +40,6 @@ def format_currency_exact(val):
         return f"$ {formatted}"
     except (ValueError, TypeError):
         return val_str
-
-def format_trimestre_label(tri_val):
-    """Convierte cualquier fecha o formato raro de Excel al estilo sept-21, mar-24, etc."""
-    if pd.isna(tri_val):
-        return ""
-    
-    s = str(tri_val).strip()
-    
-    # Si viene como timestamp de pandas / excel (ej: "2024-03-01 00:00:00")
-    if '-' in s and len(s) >= 10:
-        try:
-            dt = pd.to_datetime(s)
-            meses_map = {1: 'ene', 2: 'feb', 3: 'mar', 4: 'abr', 5: 'may', 6: 'jun',
-                         7: 'jul', 8: 'ago', 9: 'sept', 10: 'oct', 11: 'nov', 12: 'dic'}
-            mes_str = meses_map.get(dt.month, str(dt.month))
-            yy_str = str(dt.year)[-2:]
-            return f"{mes_str}-{yy_str}"
-        except Exception:
-            pass
-            
-    return s
 
 
 # ---------------------------------------------------------
@@ -267,6 +247,11 @@ def parse_stock_evolution_sheet(df_sheet):
             col_pct = idx
             break
             
+    meses_map = {
+        1: 'ene', 2: 'feb', 3: 'mar', 4: 'abr', 5: 'may', 6: 'jun',
+        7: 'jul', 8: 'ago', 9: 'sept', 10: 'oct', 11: 'nov', 12: 'dic'
+    }
+
     records = []
     for r in range(header_row + 1, len(df_sheet)):
         tri_val = df_sheet.iloc[r, col_tri]
@@ -279,8 +264,16 @@ def parse_stock_evolution_sheet(df_sheet):
             except (ValueError, TypeError):
                 continue
                 
-            # Formatear la etiqueta del trimestre (ej. sept-21)
-            tri_clean = format_trimestre_label(tri_val)
+            # Convertir cualquier formato de fecha/texto a 'mes-YY' (ej: sept-21, mar-24)
+            tri_str = str(tri_val).strip()
+            if isinstance(tri_val, (pd.Timestamp, datetime.date, datetime.datetime)):
+                tri_str = f"{meses_map.get(tri_val.month, tri_val.month)}-{str(tri_val.year)[-2:]}"
+            elif '-' in tri_str and len(tri_str) >= 10:
+                try:
+                    dt = pd.to_datetime(tri_str)
+                    tri_str = f"{meses_map.get(dt.month, dt.month)}-{str(dt.year)[-2:]}"
+                except Exception:
+                    pass
             
             pct_float = None
             pct_str = "-"
@@ -295,7 +288,7 @@ def parse_stock_evolution_sheet(df_sheet):
                     pct_str = str(pct_val).strip()
                     
             records.append({
-                'TRIMESTRE': tri_clean,
+                'TRIMESTRE': tri_str,
                 'CANTIDAD': cant_num,
                 'PCT_NUM': pct_float,
                 'PCT_STR': pct_str
@@ -641,7 +634,6 @@ with tab_stock_evo:
         with s_col1:
             st.subheader("📋 Cuadro Trimestral")
             
-            # Formateo visual para destacar en ROJO Y NEGRITA los valores negativos
             def highlight_negatives(row):
                 pct_val = row['PCT_NUM']
                 styles = [''] * len(row)
@@ -649,7 +641,6 @@ with tab_stock_evo:
                     styles = ['color: #d9534f; font-weight: bold;'] * len(row)
                 return styles
 
-            # DataFrame para visualizar en pantalla
             df_show = df_stock_evo.copy()
             df_show['CANTIDAD'] = df_show['CANTIDAD'].apply(lambda x: f"{x:,}".replace(",", "."))
             df_show = df_show.rename(columns={'PCT_STR': '% DE AUMENTO'})
@@ -660,7 +651,7 @@ with tab_stock_evo:
             
             st.dataframe(
                 styled_df,
-                column_config={'PCT_NUM': None},  # Ocultamos la columna auxiliar numérica
+                column_config={'PCT_NUM': None},
                 use_container_width=True,
                 hide_index=True
             )
@@ -684,10 +675,10 @@ with tab_stock_evo:
 
         st.markdown("---")
         
-        # 2. GRAFICOS (UNO DEBAJO DEL OTRO APERADOS DE ANCHO COMPLETO)
+        # 2. GRAFICOS DE ANCHO COMPLETO (DISPOSICIÓN VERTICAL)
         
         # Gráfico 1: Evolución de Cantidades
-        st.subheader("📉 Variación en Cantidad de Stock (Trimestre a Trimestre)")
+        st.subheader("📉 Variación en Cantidad de Stock")
         
         colors_line = ['#2b5c8f' if p >= 0 else '#d9534f' for p in df_stock_evo['PCT_NUM']]
         
@@ -699,16 +690,15 @@ with tab_stock_evo:
             text=[f"{v:,}".replace(",", ".") for v in df_stock_evo['CANTIDAD']],
             textposition="top center",
             line=dict(color='#2b5c8f', width=3),
-            marker=dict(size=9, color=colors_line),
+            marker=dict(size=8, color=colors_line),
             name="Cantidad Stock"
         ))
         
-        # type='category' obliga a Plotly a listar cada trimestre exacto en el eje X
         fig_cant.update_layout(
-            xaxis=dict(type='category', title="Trimestre", tickangle=0),
+            xaxis=dict(title="Trimestre", nticks=10),
             yaxis_title="Cantidad de Casos",
             hovermode="x unified",
-            height=400,
+            height=420,
             margin=dict(t=30, b=30, l=40, r=40)
         )
         st.plotly_chart(fig_cant, use_container_width=True)
@@ -732,13 +722,13 @@ with tab_stock_evo:
         
         fig_pct.add_hline(y=0, line_width=1, line_color="#000000")
         fig_pct.update_layout(
-            xaxis=dict(type='category', title="Trimestre", tickangle=0),
+            xaxis=dict(title="Trimestre", nticks=10),
             yaxis_title="Variación %",
             hovermode="x unified",
-            height=400,
+            height=420,
             margin=dict(t=30, b=30, l=40, r=40)
         )
         st.plotly_chart(fig_pct, use_container_width=True)
 
     else:
-        st.info("ℹ️ Para visualizar esta pestaña, asegurate de tener la **Hoja 4** cargada en tu Excel con las columnas `TRIMESTRE`, `CANTIDAD` y `% DE AUMENTO`.")
+        st.info("ℹ️ Para visualizar esta pestaña, asegurate de tener la **Hoja 4** cargada en tu Excel.")
