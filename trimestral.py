@@ -19,11 +19,13 @@ st.markdown("Análisis comparativo de **Mediaciones**, **Juicios** y **Sentencia
 # ---------------------------------------------------------
 @st.cache_data
 def load_data(file):
-    """Parsea el archivo Excel con las 3 secciones (Mediaciones, Juicios, Sentencias)"""
-    df_raw = pd.read_excel(file, header=None)
+    """Parsea el archivo Excel con las 3 secciones principales y la hoja de Stock"""
+    xls = pd.ExcelFile(file)
+    
+    # 1. Carga de datos de la Hoja 1
+    df_raw = pd.read_excel(xls, sheet_name=0, header=None)
     sections = {}
     
-    # Diccionarios para meses en español
     meses_cortos_es = {
         1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
         7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'
@@ -35,34 +37,26 @@ def load_data(file):
         if val in ['MEDIACIONES', 'JUICIOS', 'SENTENCIAS']:
             sec_name = val
             
-            # Fechas en la fila actual
             raw_dates = df_raw.iloc[i, 1:].values
             dates = pd.to_datetime(raw_dates, errors='coerce')
             
-            # Métrica 1 (Altas / Condena)
             m1_name = str(df_raw.iloc[i+1, 0]).strip()
             m1_vals = pd.to_numeric(df_raw.iloc[i+1, 1:], errors='coerce').fillna(0)
             
-            # Métrica 2 (Bajas / Rechazada)
             m2_name = str(df_raw.iloc[i+2, 0]).strip()
             m2_vals = pd.to_numeric(df_raw.iloc[i+2, 1:], errors='coerce').fillna(0)
             
-            # Construcción del DataFrame de la sección
             df_sec = pd.DataFrame({
                 'Fecha': dates,
                 m1_name: m1_vals,
                 m2_name: m2_vals
             }).dropna(subset=['Fecha']).sort_values('Fecha').reset_index(drop=True)
             
-            # Formateo y creación de banderas de filtro
             df_sec['Año'] = df_sec['Fecha'].dt.year
             df_sec['Mes_Num'] = df_sec['Fecha'].dt.month
-            
-            # Periodo formateado en español (Ej: Ene-2025)
             df_sec['Periodo'] = df_sec['Fecha'].apply(lambda d: f"{meses_cortos_es[d.month]}-{d.year}")
             df_sec['Es_Enero'] = df_sec['Mes_Num'] == 1
             
-            # Si es Sentencias, calcular % de Rechazo sobre Condena por mes
             if sec_name == 'SENTENCIAS':
                 df_sec['% Rechazo s/ Condena'] = np.where(
                     df_sec[m1_name] > 0,
@@ -79,7 +73,70 @@ def load_data(file):
         else:
             i += 1
             
-    return sections
+    # 2. Carga de la Hoja 2 (Stock) si existe
+    stock_data = None
+    if len(xls.sheet_names) > 1:
+        try:
+            df_stock = pd.read_excel(xls, sheet_name=1, header=None)
+            stock_data = parse_stock_sheet(df_stock)
+        except Exception:
+            stock_data = None
+
+    return sections, stock_data
+
+
+def parse_stock_sheet(df_sheet):
+    """Extrae dinómicamente los datos de Stock de la Hoja 2"""
+    stock_val, trim_ant_val = None, None
+    auto_val, auto_pct = None, None
+    moto_val, moto_pct = None, None
+    
+    for r in range(len(df_sheet)):
+        row_str = [str(cell).strip().upper() for cell in df_sheet.iloc[r].tolist()]
+        
+        # Buscar "STOCK"
+        if 'STOCK' in row_str:
+            col_idx = row_str.index('STOCK')
+            if r + 1 < len(df_sheet):
+                val = df_sheet.iloc[r+1, col_idx]
+                if pd.notna(val): stock_val = int(pd.to_numeric(val, errors='coerce'))
+                
+        # Buscar "AUTO" y "MOTO"
+        if 'AUTO' in row_str and 'MOTO' in row_str:
+            col_auto = row_str.index('AUTO')
+            col_moto = row_str.index('MOTO')
+            if r + 1 < len(df_sheet):
+                v_a = df_sheet.iloc[r+1, col_auto]
+                v_m = df_sheet.iloc[r+1, col_moto]
+                if pd.notna(v_a): auto_val = int(pd.to_numeric(v_a, errors='coerce'))
+                if pd.notna(v_m): moto_val = int(pd.to_numeric(v_m, errors='coerce'))
+            if r + 2 < len(df_sheet):
+                p_a = df_sheet.iloc[r+2, col_auto]
+                p_m = df_sheet.iloc[r+2, col_moto]
+                # Formatear porcentajes a enteros
+                if pd.notna(p_a):
+                    num_a = float(p_a) * 100 if float(p_a) <= 1 else float(p_a)
+                    auto_pct = f"{int(round(num_a))}%"
+                if pd.notna(p_m):
+                    num_m = float(p_m) * 100 if float(p_m) <= 1 else float(p_m)
+                    moto_pct = f"{int(round(num_m))}%"
+
+        # Buscar "TRIM. ANT"
+        for col_idx, cell in enumerate(row_str):
+            if 'TRIM. ANT' in cell or 'TRIM' in cell:
+                if r + 1 < len(df_sheet):
+                    val = df_sheet.iloc[r+1, col_idx]
+                    if pd.notna(val): trim_ant_val = int(pd.to_numeric(val, errors='coerce'))
+
+    return {
+        'stock': stock_val,
+        'trim_ant': trim_ant_val,
+        'auto_val': auto_val,
+        'auto_pct': auto_pct,
+        'moto_val': moto_val,
+        'moto_pct': moto_pct
+    }
+
 
 def render_trimestral_comparison(df, m1, m2):
     """Genera la sección comparativa del último trimestre vs el trimestre anterior"""
@@ -87,7 +144,6 @@ def render_trimestral_comparison(df, m1, m2):
         st.warning("Se necesitan al menos 6 meses de datos para realizar la comparación trimestral.")
         return
     
-    # Selección de los últimos 3 meses y los 3 meses anteriores
     last_3 = df.iloc[-3:]
     prev_3 = df.iloc[-6:-3]
     
@@ -128,10 +184,10 @@ st.sidebar.header("📁 Cargar Datos")
 uploaded_file = st.sidebar.file_uploader("Seleccioná el archivo Excel (`.xlsx`)", type=["xlsx"])
 
 if uploaded_file is not None:
-    data = load_data(uploaded_file)
+    data, stock_info = load_data(uploaded_file)
 else:
     try:
-        data = load_data('TRIMESTRAL PRUEBA.xlsx')
+        data, stock_info = load_data('TRIMESTRAL PRUEBA.xlsx')
         st.sidebar.success("Usando archivo local de prueba.")
     except Exception:
         st.info("👋 Por favor cargá un archivo Excel en la barra lateral para continuar.")
@@ -202,6 +258,39 @@ with tab_med:
     # Análisis Trimestral Reciente
     st.markdown("---")
     render_trimestral_comparison(df, m1, m2)
+
+    # SECCIÓN NUEVA: Estado del Stock (Desde Hoja 2)
+    st.markdown("---")
+    st.subheader("📦 Estado e Información de Stock")
+    
+    if stock_info and stock_info['stock'] is not None:
+        sc1, sc2, sc3, sc4 = st.columns(4)
+        
+        # Stock Actual
+        sc1.metric("Stock Actual", f"{stock_info['stock']:,}".replace(",", "."))
+        
+        # Auto
+        auto_label = f"{stock_info['auto_val']:,}".replace(",", ".") if stock_info['auto_val'] else "-"
+        sc2.metric("🚗 Auto", auto_label, delta=stock_info['auto_pct'], delta_color="off")
+        
+        # Moto
+        moto_label = f"{stock_info['moto_val']:,}".replace(",", ".") if stock_info['moto_val'] else "-"
+        sc3.metric("🏍️ Moto", moto_label, delta=stock_info['moto_pct'], delta_color="off")
+        
+        # Trimestre Anterior y Variación
+        if stock_info['trim_ant'] is not None:
+            trim_ant_val = stock_info['trim_ant']
+            diff_stock = stock_info['stock'] - trim_ant_val
+            pct_stock = int(round((diff_stock / trim_ant_val) * 100)) if trim_ant_val > 0 else 0
+            sc4.metric(
+                "Stock Trimestre Anterior",
+                f"{trim_ant_val:,}".replace(",", "."),
+                delta=f"{diff_stock:+d} ({pct_stock:+d}%) vs Actual"
+            )
+        else:
+            sc4.metric("Stock Trimestre Anterior", "-")
+    else:
+        st.info("ℹ️ Para visualizar el stock, asegurate de incluir la Hoja 2 en tu archivo Excel.")
 
 # ---------------------------------------------------------
 # 2. JUICIOS
@@ -276,7 +365,6 @@ with tab_sen:
     avg_m1 = int(df_no_jan[m1].mean())
     avg_m2 = int(df_no_jan[m2].mean())
     
-    # % Rechazo Total respecto a Condena
     total_condena = df_no_jan[m1].sum()
     total_rechazo = df_no_jan[m2].sum()
     pct_total_rechazo = int(round(total_rechazo / total_condena * 100)) if total_condena > 0 else 0
@@ -311,7 +399,6 @@ with tab_sen:
         fig_avg.update_layout(yaxis_title="Promedio Mensual", showlegend=False)
         st.plotly_chart(fig_avg, use_container_width=True)
 
-    # Gráfico adicional: Porcentaje Mensual de Rechazo sobre Condena
     st.subheader("📈 Porcentaje Mensual de Rechazo respecto a Condena (%)")
     fig_pct = px.bar(
         df,
@@ -325,7 +412,6 @@ with tab_sen:
     fig_pct.add_hline(y=pct_total_rechazo, line_dash="dot", line_color="#e83e8c", annotation_text=f"% General Total: {pct_total_rechazo}%")
     st.plotly_chart(fig_pct, use_container_width=True)
 
-    # Tabla de datos mensuales limpia
     st.subheader("📋 Tabla de Datos Mensuales con % de Rechazo")
     df_display = df.copy()
     df_display['% Rechazo s/ Condena'] = df_display['% Rechazo s/ Condena'].round().astype(int).astype(str) + '%'
@@ -336,7 +422,6 @@ with tab_sen:
         hide_index=True
     )
     
-    # Tabla de acumulados anuales con % de rechazo
     st.markdown("---")
     st.subheader("📅 Totales Anuales (Condena y Rechazada)")
     df_annual = df.groupby('Año')[[m1, m2]].sum().reset_index()
@@ -349,6 +434,5 @@ with tab_sen:
     
     st.dataframe(df_annual, use_container_width=True, hide_index=True)
 
-    # Análisis Trimestral Reciente
     st.markdown("---")
     render_trimestral_comparison(df, m1, m2)
