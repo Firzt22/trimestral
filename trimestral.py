@@ -145,7 +145,7 @@ with tab_med:
         fig_avg.update_layout(yaxis_title="Promedio Mensual", showlegend=False)
         st.plotly_chart(fig_avg, use_container_width=True)
 
-    # Tabla de datos mensuales limpia (solo Periodo, Métrica 1 y Métrica 2)
+    # Tabla de datos mensuales limpia
     st.subheader("📋 Tabla de Datos Mensuales")
     st.dataframe(
         df[['Periodo', m1, m2]],
@@ -228,15 +228,15 @@ with tab_sen:
     avg_m1 = int(df_no_jan[m1].mean())
     avg_m2 = int(df_no_jan[m2].mean())
     
-    # % Rechazo Total respecto a Condena
+    # % Rechazo Total respecto a Condena (Número entero)
     total_condena = df_no_jan[m1].sum()
     total_rechazo = df_no_jan[m2].sum()
-    pct_total_rechazo = (total_rechazo / total_condena * 100) if total_condena > 0 else 0
+    pct_total_rechazo = int(round(total_rechazo / total_condena * 100)) if total_condena > 0 else 0
     
     col1, col2, col3, col4 = st.columns(4)
     col1.metric(f"Promedio {m1}", f"{avg_m1}")
     col2.metric(f"Promedio {m2}", f"{avg_m2}")
-    col3.metric("% Total Rechazo / Condena", f"{pct_total_rechazo:.2f}%")
+    col3.metric("% Total Rechazo / Condena", f"{pct_total_rechazo}%")
     col4.metric("Meses Analizados", len(df_no_jan))
     
     st.markdown("---")
@@ -272,15 +272,15 @@ with tab_sen:
         color='Es_Enero',
         color_discrete_map={True: '#999999', False: '#6f42c1'},
         labels={'% Rechazo s/ Condena': '% Rechazo', 'Es_Enero': 'Mes de Enero'},
-        text_auto='.1f'
+        text_auto='.0f'  # Formato número entero sin decimales
     )
-    fig_pct.add_hline(y=pct_total_rechazo, line_dash="dot", line_color="#e83e8c", annotation_text=f"% General Total: {pct_total_rechazo:.1f}%")
+    fig_pct.add_hline(y=pct_total_rechazo, line_dash="dot", line_color="#e83e8c", annotation_text=f"% General Total: {pct_total_rechazo}%")
     st.plotly_chart(fig_pct, use_container_width=True)
 
     # Tabla de datos mensuales limpia
     st.subheader("📋 Tabla de Datos Mensuales con % de Rechazo")
     df_display = df.copy()
-    df_display['% Rechazo s/ Condena'] = df_display['% Rechazo s/ Condena'].apply(lambda x: f"{x:.2f}%")
+    df_display['% Rechazo s/ Condena'] = df_display['% Rechazo s/ Condena'].round().astype(int).astype(str) + '%'
     
     st.dataframe(
         df_display[['Periodo', m1, m2, '% Rechazo s/ Condena']],
@@ -288,8 +288,16 @@ with tab_sen:
         hide_index=True
     )
     
-    # Tabla de acumulados anuales
+    # Tabla de acumulados anuales con % de rechazo
     st.markdown("---")
     st.subheader("📅 Totales Anuales (Condena y Rechazada)")
     df_annual = df.groupby('Año')[[m1, m2]].sum().reset_index()
+    
+    # Cálculo del % de Rechazo sobre Condena en el acumulado anual (número entero)
+    df_annual['% Rechazo s/ Condena'] = np.where(
+        df_annual[m1] > 0,
+        (df_annual[m2] / df_annual[m1] * 100).round().astype(int).astype(str) + '%',
+        '0%'
+    )
+    
     st.dataframe(df_annual, use_container_width=True, hide_index=True)
