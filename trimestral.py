@@ -12,10 +12,10 @@ st.set_page_config(
 )
 
 st.title("📊 Informe Trimestral de Gestión Judicial")
-st.markdown("Análisis comparativo de **Mediaciones**, **Juicios** y **Sentencias**.")
+st.markdown("Análisis comparativo de **Mediaciones**, **Juicios**, **Sentencias** y **Evolución del Stock**.")
 
 # ---------------------------------------------------------
-# FUNCIONES AUXILIARES DE FORMATO DE MONEDA
+# FUNCIONES AUXILIARES DE FORMATO DE MONEDA Y TABLA
 # ---------------------------------------------------------
 def format_currency_exact(val):
     """Garantiza el formato exacto estilo Excel: $ 1.234.567 o $ 1.234.567,89"""
@@ -24,11 +24,9 @@ def format_currency_exact(val):
     
     val_str = str(val).strip()
     
-    # Si ya viene con el signo $ del Excel, lo devolvemos tal cual
     if '$' in val_str:
         return val_str
         
-    # Intentamos formatear si viene como entero/float numérico
     try:
         num = float(val_str.replace('.', '').replace(',', '.')) if ',' in val_str and '.' in val_str else float(val_str)
         num = round(num, 2)
@@ -48,7 +46,7 @@ def format_currency_exact(val):
 # ---------------------------------------------------------
 @st.cache_data
 def load_data(file):
-    """Parsea el archivo Excel con las 3 secciones principales y las hojas de Stock y Juicios Extra"""
+    """Parsea el archivo Excel con todas las hojas (1, 2, 3 y 4)"""
     xls = pd.ExcelFile(file)
     
     # 1. Carga de datos de la Hoja 1
@@ -102,7 +100,7 @@ def load_data(file):
         else:
             i += 1
             
-    # 2. Carga de la Hoja 2 (Stock)
+    # 2. Carga de la Hoja 2 (Stock Resumen)
     stock_data = None
     if len(xls.sheet_names) > 1:
         try:
@@ -115,13 +113,21 @@ def load_data(file):
     presupuesto_data, embargos_data = None, None
     if len(xls.sheet_names) > 2:
         try:
-            # Forzamos tipo texto al leer para intentar conservar el formato exacto
             df_jui_extra = pd.read_excel(xls, sheet_name=2, header=None, dtype=str)
             presupuesto_data, embargos_data = parse_juicios_extra_sheet(df_jui_extra)
         except Exception:
             presupuesto_data, embargos_data = None, None
 
-    return sections, stock_data, presupuesto_data, embargos_data
+    # 4. Carga de la Hoja 4 (Evolución Trimestral de Stock)
+    stock_evo_df = None
+    if len(xls.sheet_names) > 3:
+        try:
+            df_sheet4 = pd.read_excel(xls, sheet_name=3, header=None)
+            stock_evo_df = parse_stock_evolution_sheet(df_sheet4)
+        except Exception:
+            stock_evo_df = None
+
+    return sections, stock_data, presupuesto_data, embargos_data, stock_evo_df
 
 
 def parse_stock_sheet(df_sheet):
@@ -204,14 +210,11 @@ def parse_juicios_extra_sheet(df_sheet):
             cant = row[1]
             monto = row[2]
             
-            # Omitir fila de encabezados "CANTIDAD" "MONTO"
             if str(cant).strip().upper() == 'CANTIDAD':
                 continue
                 
             if pd.notna(cant) and str(cant).strip().upper() != 'NAN':
-                # Formatear la cantidad como entero si aplica
                 cant_str = str(cant).strip().split('.')[0] if '.' in str(cant) else str(cant).strip()
-                
                 embargos_list.append({
                     'MES': mes,
                     'CANTIDAD': cant_str,
@@ -219,6 +222,77 @@ def parse_juicios_extra_sheet(df_sheet):
                 })
                 
     return pd.DataFrame(presupuesto_list), pd.DataFrame(embargos_list)
+
+
+def parse_stock_evolution_sheet(df_sheet):
+    """Extrae dinómicamente la tabla de Evolución del Stock Trimestral de la Hoja 4"""
+    header_row = -1
+    for r in range(len(df_sheet)):
+        row_vals = [str(c).strip().upper() for c in df_sheet.iloc[r].tolist()]
+        if 'TRIMESTRE' in row_vals and 'CANTIDAD' in row_vals:
+            header_row = r
+            break
+            
+    if header_row == -1:
+        return None
+        
+    row_headers = [str(c).strip().upper() for c in df_sheet.iloc[header_row].tolist()]
+    col_tri = row_headers.index('TRIMESTRE')
+    col_cant = row_headers.index('CANTIDAD')
+    
+    col_pct = None
+    for idx, c in enumerate(row_headers):
+        if '%' in c or 'AUMENTO' in c or 'VARIACION' in c:
+            col_pct = idx
+            break
+            
+    records = []
+    for r in range(header_row + 1, len(df_sheet)):
+        tri_val = df_sheet.iloc[r, col_tri]
+        cant_val = df_sheet.iloc[r, col_cant]
+        pct_val = df_sheet.iloc[r, col_pct] if col_pct is not None else None
+        
+        if pd.notna(tri_val) and str(tri_val).strip() != '' and str(tri_val).strip().upper() != 'NAN':
+            try:
+                cant_num = int(pd.to_numeric(cant_val))
+            except (ValueError, TypeError):
+                continue
+                
+            pct_float = None
+            pct_str = "-"
+            if pd.notna(pct_val):
+                p_s = str(pct_val).strip().replace(',', '.').replace('%', '')
+                try:
+                    pct_float = float(p_s)
+                    if abs(pct_float) <= 1 and pct_float != 0:
+                        pct_float = pct_float * 100
+                    pct_str = f"{pct_float:.1f}%".replace('.', ',') if pct_float != 0 else "0,0%"
+                except ValueError:
+                    pct_str = str(pct_val).strip()
+                    
+            records.append({
+                'TRIMESTRE': str(tri_val).strip(),
+                'CANTIDAD': cant_num,
+                'PCT_NUM': pct_float,
+                'PCT_STR': pct_str
+            })
+            
+    df_res = pd.DataFrame(records)
+    
+    # Calcular variaciones numéricas si PCT_NUM vino nulo desde Excel
+    if not df_res.empty:
+        for i in range(len(df_res)):
+            if i == 0:
+                df_res.loc[i, 'PCT_NUM'] = 0.0
+            else:
+                prev = df_res.loc[i-1, 'CANTIDAD']
+                curr = df_res.loc[i, 'CANTIDAD']
+                if pd.isna(df_res.loc[i, 'PCT_NUM']) and prev > 0:
+                    diff_pct = ((curr - prev) / prev) * 100
+                    df_res.loc[i, 'PCT_NUM'] = diff_pct
+                    df_res.loc[i, 'PCT_STR'] = f"{diff_pct:.1f}%".replace('.', ',')
+                    
+    return df_res
 
 
 def render_trimestral_comparison(df, m1, m2):
@@ -267,17 +341,22 @@ st.sidebar.header("📁 Cargar Datos")
 uploaded_file = st.sidebar.file_uploader("Seleccioná el archivo Excel (`.xlsx`)", type=["xlsx"])
 
 if uploaded_file is not None:
-    data, stock_info, df_presupuesto, df_embargos = load_data(uploaded_file)
+    data, stock_info, df_presupuesto, df_embargos, df_stock_evo = load_data(uploaded_file)
 else:
     try:
-        data, stock_info, df_presupuesto, df_embargos = load_data('TRIMESTRAL PRUEBA.xlsx')
+        data, stock_info, df_presupuesto, df_embargos, df_stock_evo = load_data('TRIMESTRAL PRUEBA.xlsx')
         st.sidebar.success("Usando archivo local de prueba.")
     except Exception:
         st.info("👋 Por favor cargá un archivo Excel en la barra lateral para continuar.")
         st.stop()
 
 # Pestañas de la aplicación
-tab_med, tab_jui, tab_sen = st.tabs(["🤝 Mediaciones", "⚖️ Juicios", "📜 Sentencias"])
+tab_med, tab_jui, tab_sen, tab_stock_evo = st.tabs([
+    "🤝 Mediaciones", 
+    "⚖️ Juicios", 
+    "📜 Sentencias", 
+    "📈 Evolución Stock Juicios"
+])
 
 # ---------------------------------------------------------
 # 1. MEDIACIONES
@@ -524,3 +603,121 @@ with tab_sen:
 
     st.markdown("---")
     render_trimestral_comparison(df, m1, m2)
+
+# ---------------------------------------------------------
+# 4. EVOLUCIÓN HISTÓRICA DE STOCK (HOJA 4)
+# ---------------------------------------------------------
+with tab_stock_evo:
+    st.header("📈 Evolución Histórica de Stock de Juicios")
+    
+    if df_stock_evo is not None and not df_stock_evo.empty:
+        
+        # 1. TABLA Y MÉTRICAS PRINCIPALES
+        s_col1, s_col2 = st.columns([1, 2])
+        
+        with s_col1:
+            st.subheader("📋 Cuadro Trimestral")
+            
+            # Formateo visual para destacar en ROJO Y NEGRITA los valores negativos
+            def highlight_negatives(row):
+                pct_val = row['PCT_NUM']
+                styles = [''] * len(row)
+                if pd.notna(pct_val) and pct_val < 0:
+                    # Aplicar rojo y negrita a la fila completa si bajó el stock
+                    styles = ['color: #d9534f; font-weight: bold;'] * len(row)
+                return styles
+
+            # DataFrame para visualizar en pantalla
+            df_show = df_stock_evo.copy()
+            df_show['CANTIDAD'] = df_show['CANTIDAD'].apply(lambda x: f"{x:,}".replace(",", "."))
+            df_show = df_show.rename(columns={'PCT_STR': '% DE AUMENTO'})
+            
+            styled_df = df_show[['TRIMESTRE', 'CANTIDAD', '% DE AUMENTO', 'PCT_NUM']].style.apply(
+                highlight_negatives, axis=1
+            )
+            
+            st.dataframe(
+                styled_df,
+                column_config={'PCT_NUM': None},  # Ocultamos la columna auxiliar numérica
+                use_container_width=True,
+                hide_index=True
+            )
+
+        with s_col2:
+            st.subheader("📊 Métrica del Último Trimestre")
+            last_row = df_stock_evo.iloc[-1]
+            prev_row = df_stock_evo.iloc[-2] if len(df_stock_evo) > 1 else last_row
+            
+            diff_abs = last_row['CANTIDAD'] - prev_row['CANTIDAD']
+            pct_val = last_row['PCT_NUM']
+            
+            m_col1, m_col2 = st.columns(2)
+            m_col1.metric("Stock Actual", f"{last_row['CANTIDAD']:,}".replace(",", "."))
+            m_col2.metric(
+                "Variación Trimestral",
+                f"{last_row['PCT_STR']}",
+                delta=f"{diff_abs:+d} casos vs {prev_row['TRIMESTRE']}"
+            )
+            
+            st.info("💡 **Nota:** La tabla y gráficos se actualizan automáticamente al añadir nuevos trimestres en la Hoja 4 del Excel.")
+
+        st.markdown("---")
+        
+        # 2. GRAFICOS
+        g1, g2 = st.columns(2)
+        
+        # Gráfico 1: Evolución de Cantidades
+        with g1:
+            st.subheader("📉 Variación en Cantidad de Stock")
+            
+            # Identificar colores para cada punto/línea
+            colors_line = ['#2b5c8f' if p >= 0 else '#d9534f' for p in df_stock_evo['PCT_NUM']]
+            
+            fig_cant = go.Figure()
+            fig_cant.add_trace(go.Scatter(
+                x=df_stock_evo['TRIMESTRE'],
+                y=df_stock_evo['CANTIDAD'],
+                mode='lines+markers+text',
+                text=[f"{v:,}".replace(",", ".") for v in df_stock_evo['CANTIDAD']],
+                textposition="top center",
+                line=dict(color='#2b5c8f', width=3),
+                marker=dict(size=8, color=colors_line),
+                name="Cantidad Stock"
+            ))
+            
+            fig_cant.update_layout(
+                xaxis_title="Trimestre",
+                yaxis_title="Cantidad de Casos",
+                hovermode="x unified",
+                margin=dict(t=30, b=20)
+            )
+            st.plotly_chart(fig_cant, use_container_width=True)
+
+        # Gráfico 2: Evolución Porcentual (% DE AUMENTO)
+        with g2:
+            st.subheader("📊 Variación Porcentual (%)")
+            
+            # Asignar color azul/verde para positivo y rojo para negativo
+            bar_colors = ['#d9534f' if val < 0 else '#28a745' for val in df_stock_evo['PCT_NUM']]
+            
+            fig_pct = go.Figure()
+            fig_pct.add_trace(go.Bar(
+                x=df_stock_evo['TRIMESTRE'],
+                y=df_stock_evo['PCT_NUM'],
+                marker_color=bar_colors,
+                text=df_stock_evo['PCT_STR'],
+                textposition='auto',
+                name="% Variación"
+            ))
+            
+            fig_pct.add_hline(y=0, line_width=1, line_color="#000000")
+            fig_pct.update_layout(
+                xaxis_title="Trimestre",
+                yaxis_title="Variación %",
+                hovermode="x unified",
+                margin=dict(t=30, b=20)
+            )
+            st.plotly_chart(fig_pct, use_container_width=True)
+
+    else:
+        st.info("ℹ️ Para visualizar esta pestaña, asegurate de tener la **Hoja 4** cargada en tu Excel con las columnas `TRIMESTRE`, `CANTIDAD` y `% DE AUMENTO`.")
