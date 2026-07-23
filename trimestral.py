@@ -42,6 +42,35 @@ def format_currency_exact(val):
         return val_str
 
 
+def format_trimestre_label(val):
+    """Convierte cualquier fecha o texto a formato corto exacto: sept-21, dic-21, mar-22, etc."""
+    if pd.isna(val) or val is None:
+        return None
+        
+    val_str = str(val).strip()
+    if val_str == '' or val_str.upper() in ['NAN', 'NONE']:
+        return None
+
+    # Si ya tiene el formato texto tipo 'sept-21', 'mar-24', sin horas
+    if not ('00:00:00' in val_str or 'T00:' in val_str) and '-' in val_str and len(val_str) <= 8:
+        parts = val_str.split('-')
+        if len(parts) == 2 and not parts[0].isdigit():
+            return val_str
+
+    # Convertir desde Timestamp / ISO / datetime
+    try:
+        dt = pd.to_datetime(val_str)
+        meses_map = {
+            1: 'ene', 2: 'feb', 3: 'mar', 4: 'abr', 5: 'may', 6: 'jun',
+            7: 'jul', 8: 'ago', 9: 'sept', 10: 'oct', 11: 'nov', 12: 'dic'
+        }
+        mes_str = meses_map.get(dt.month, str(dt.month))
+        year_str = str(dt.year)[-2:]
+        return f"{mes_str}-{year_str}"
+    except Exception:
+        return val_str
+
+
 # ---------------------------------------------------------
 # FUNCIONES DE PROCESAMIENTO DE DATOS
 # ---------------------------------------------------------
@@ -119,7 +148,7 @@ def load_data(file):
         except Exception:
             presupuesto_data, embargos_data = None, None
 
-    # 4. Carga de la Hoja 4 (Evolución Trimestral de Stock - Forzando lectura en string puro)
+    # 4. Carga de la Hoja 4 (Evolución Trimestral de Stock)
     stock_evo_df = None
     if len(xls.sheet_names) > 3:
         try:
@@ -226,7 +255,7 @@ def parse_juicios_extra_sheet(df_sheet):
 
 
 def parse_stock_evolution_sheet(df_sheet):
-    """Extrae dinómicamente la tabla de Evolución del Stock Trimestral respetando el texto exacto del Excel"""
+    """Extrae la tabla de Evolución Trimestral y formatea las fechas a sept-21, dic-21, etc."""
     header_row = -1
     for r in range(len(df_sheet)):
         row_vals = [str(c).strip().upper() for c in df_sheet.iloc[r].tolist()]
@@ -253,11 +282,10 @@ def parse_stock_evolution_sheet(df_sheet):
         cant_val = df_sheet.iloc[r, col_cant]
         pct_val = df_sheet.iloc[r, col_pct] if col_pct is not None else None
         
-        if pd.notna(tri_val):
-            tri_str = str(tri_val).strip()
-            if tri_str == '' or tri_str.upper() == 'NAN' or tri_str.upper() == 'NONE':
-                continue
-                
+        # Formatear el trimestre usando la función auxiliar
+        tri_formatted = format_trimestre_label(tri_val)
+        
+        if tri_formatted is not None:
             try:
                 cant_clean = str(cant_val).strip().replace('.', '').replace(',', '')
                 cant_num = int(float(cant_clean))
@@ -277,7 +305,7 @@ def parse_stock_evolution_sheet(df_sheet):
                     pct_str = str(pct_val).strip()
                     
             records.append({
-                'TRIMESTRE': tri_str,
+                'TRIMESTRE': tri_formatted,
                 'CANTIDAD': cant_num,
                 'PCT_NUM': pct_float,
                 'PCT_STR': pct_str
