@@ -15,6 +15,28 @@ st.title("📊 Informe Trimestral de Gestión Judicial")
 st.markdown("Análisis comparativo de **Mediaciones**, **Juicios** y **Sentencias**.")
 
 # ---------------------------------------------------------
+# FUNCIONES AUXILIARES DE FORMATO
+# ---------------------------------------------------------
+def format_currency(val):
+    """Formatea valores numéricos en formato de moneda ($ 1.234.567,89)"""
+    if pd.isna(val) or val == "":
+        return ""
+    try:
+        if isinstance(val, str):
+            val_clean = val.replace('$', '').replace(' ', '').replace('.', '').replace(',', '.')
+            num = float(val_clean)
+        else:
+            num = float(val)
+            
+        if num.is_integer():
+            return f"$ {int(num):,}".replace(",", ".")
+        else:
+            return f"$ {num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except (ValueError, TypeError):
+        return str(val).strip()
+
+
+# ---------------------------------------------------------
 # FUNCIONES DE PROCESAMIENTO DE DATOS
 # ---------------------------------------------------------
 @st.cache_data
@@ -164,7 +186,10 @@ def parse_juicios_extra_sheet(df_sheet):
             mes = str(row[0]).strip()
             monto = row[1]
             if pd.notna(mes) and pd.notna(monto):
-                presupuesto_list.append({'MES': mes, 'MONTO': str(monto).strip()})
+                presupuesto_list.append({
+                    'MES': mes,
+                    'MONTO': format_currency(monto)
+                })
                 
         elif mode == 'EMBARGOS' and cell_0 != '':
             mes = str(row[0]).strip()
@@ -175,7 +200,7 @@ def parse_juicios_extra_sheet(df_sheet):
                 embargos_list.append({
                     'MES': mes,
                     'CANTIDAD': cant_str,
-                    'MONTO': str(monto).strip() if pd.notna(monto) else ''
+                    'MONTO': format_currency(monto)
                 })
                 
     return pd.DataFrame(presupuesto_list), pd.DataFrame(embargos_list)
@@ -380,7 +405,7 @@ with tab_jui:
     st.markdown("---")
     render_trimestral_comparison(df, m1, m2)
 
-    # SECCIÓN NUEVA: Presupuesto y Embargos (Desde Hoja 3)
+    # SECCIÓN: Presupuesto y Embargos (Hoja 3)
     st.markdown("---")
     st.subheader("💰 Presupuesto y Embargos")
     
